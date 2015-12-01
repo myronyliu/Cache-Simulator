@@ -14,6 +14,8 @@
 #define BLOCKSIZE 64
 #define associativity 4
 
+#define ADDRESSBITS 32
+
 // a good place to declare your storage for tags, etc.  Obviously,
 //   you don't need to actually store the data.
 
@@ -25,6 +27,12 @@ unsigned int offsets[BUFFERSIZE];
 
 unsigned int  valids[BUFFERSIZE];
 unsigned int    LRUs[BUFFERSIZE];
+
+int partitioned = 0;
+unsigned int tagBits = 0;
+unsigned int indexBits = 0;
+unsigned int offsetBits = 0;
+
 
 long hits=0, misses=0, readhits=0, readmisses=0;
 
@@ -96,24 +104,51 @@ main()
 
 int is_cache_miss(int loadstore, long address, int cycles)
 {
-	int hit;
-	hit = 0;
-	if (hit)
+	if (!partitioned)
 	{
-		hits++;
-		if (loadstore == LOAD) 
+		int distinctOffsets = 1;
+		while (distinctOffsets < BLOCKSIZE)
 		{
-			readhits++;
+			distinctOffsets *= 2;
+			offsetBits++;
 		}
-		return 0;
+
+		int distinctIndices = 1;
+		while (distinctIndices < CACHESIZE / (BLOCKSIZE * associativity))
+		{
+			distinctIndices *= 2;
+			indexBits++;
+		}
+
+		tagBits = ADDRESSBITS - indexBits - offsetBits;
+
+		partitioned = 1;
+		printf("%d bit address had been partitioned into:\n", ADDRESSBITS);
+		printf("  %d\t tag         bits\n", tagBits);
+		printf("  %d\t index       bits\n", indexBits);
+		printf("  %d\t byte-offset bits\n", offsetBits);
 	}
-	
-	/* miss */
-	misses++;
-	if (loadstore == LOAD) 
-	{
-		readmisses++;
-	}
+
 	return 1;
+
+//	int hit;
+//	hit = 0;
+//	if (hit)
+//	{
+//		hits++;
+//		if (loadstore == LOAD) 
+//		{
+//			readhits++;
+//		}
+//		return 0;
+//	}
+//	
+//	/* miss */
+//	misses++;
+//	if (loadstore == LOAD) 
+//	{
+//		readmisses++;
+//	}
+//	return 1;
 }
 
