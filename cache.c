@@ -19,16 +19,16 @@
 // a good place to declare your storage for tags, etc.  Obviously,
 //   you don't need to actually store the data.
 
-#define BUFFERSIZE 1048576
+#define BUFFERSIZE 1048576 // We allocate more than we actually need
 
-unsigned int    tags[BUFFERSIZE]; // We allocate more than we actually need
 unsigned int indices[BUFFERSIZE];
-unsigned int offsets[BUFFERSIZE];
+unsigned int    tags[BUFFERSIZE][associativity];
+unsigned int offsets[BUFFERSIZE][associativity];
 
-unsigned int  valids[BUFFERSIZE];
-unsigned int    LRUs[BUFFERSIZE];
+int  valids[BUFFERSIZE][associativity];
+unsigned int    LRUs[BUFFERSIZE][associativity];
 
-int partitioned = 0;
+int initialized = 0;
 unsigned int tagBits = 0;
 unsigned int indexBits = 0;
 unsigned int offsetBits = 0;
@@ -96,6 +96,40 @@ main()
 	printf("store_hits %ld\n", hits - readhits);
 }
 
+void init()
+{
+	int i, j;
+
+	int distinctOffsets = 1;
+	while (distinctOffsets < BLOCKSIZE)
+	{
+		distinctOffsets *= 2;
+		offsetBits++;
+	}
+
+	int distinctIndices = 1;
+	while (distinctIndices < CACHESIZE / (BLOCKSIZE * associativity))
+	{
+		distinctIndices *= 2;
+		indexBits++;
+	}
+
+	tagBits = ADDRESSBITS - indexBits - offsetBits;
+
+	printf("%d bit address had been partitioned into:\n", ADDRESSBITS);
+	printf("  %d\t tag         bits\n", tagBits);
+	printf("  %d\t index       bits\n", indexBits);
+	printf("  %d\t byte-offset bits\n", offsetBits);
+
+	for (i = 0; i < CACHESIZE / (BLOCKSIZE * associativity); ++i)
+	{
+		for (j = 0; j < associativity; ++ j)
+		{
+			valids[i][j] = 0;
+		}
+	}
+}
+
 
 // you will complete this function.  Notice that we pass the 
 //    cycle count to this routine as an argument.  That may make
@@ -104,32 +138,102 @@ main()
 
 int is_cache_miss(int loadstore, long address, int cycles)
 {
-	if (!partitioned)
+	if (!initialized)
 	{
-		int distinctOffsets = 1;
-		while (distinctOffsets < BLOCKSIZE)
-		{
-			distinctOffsets *= 2;
-			offsetBits++;
-		}
-
-		int distinctIndices = 1;
-		while (distinctIndices < CACHESIZE / (BLOCKSIZE * associativity))
-		{
-			distinctIndices *= 2;
-			indexBits++;
-		}
-
-		tagBits = ADDRESSBITS - indexBits - offsetBits;
-
-		partitioned = 1;
-		printf("%d bit address had been partitioned into:\n", ADDRESSBITS);
-		printf("  %d\t tag         bits\n", tagBits);
-		printf("  %d\t index       bits\n", indexBits);
-		printf("  %d\t byte-offset bits\n", offsetBits);
+		// partition the 32 bit address into (tag,index,offset)
+		// set all cache lines to "invalid"
+		init();
+		initialized = 1;
 	}
 
-	return 1;
+	int i, j;
+
+	unsigned int tag_index_offset = (1 << ADDRESSBITS == 0) ? address : address % (1 << ADDRESSBITS);
+	unsigned int index_offset = tag_index_offset % (1 << indexBits + offsetBits);
+
+	unsigned int offset = index_offset % (1 << offsetBits);
+	unsigned int index = index_offset >> offsetBits;
+	unsigned int tag = tag_index_offset >> (indexBits + offsetBits);
+
+	int *setValids = valids[index];
+	int *setTags   =   tags[index];
+	int *setLRUs   =   LRUs[index];
+
+	int hit = 0;
+
+	int vacancy = -1;
+	int oldest = 0;
+	int maxLRU = 0;
+
+	for (i = 0; i < associativity; ++i)
+	{
+		if (setValids[i] == 1)
+		{
+			if (setTags[i] == tag)
+			{
+				hit = 1;
+				break;
+			}
+			if (setLRUs[i] > maxLRU)
+			{
+				maxLRU = setLRUs[i];
+				oldest = i;
+			}
+		}
+		else if (vacancy < 0) // We encountered an invalid line
+		{
+			vacancy = i;
+		}
+	}
+
+	if (hit)
+	{
+		if (loadstore == LOAD) 
+		{
+			readhits++;
+		}
+		hits++;
+
+		// Set this line to the most recently used
+		for (j = 0; j < associativity; ++j)
+		{
+			if (setLRUs[j] < setLRUs[i])
+			{
+				setLRUs[j]++; 
+			}
+		}
+		setLRUs[i] = 0;
+
+		return 0;
+	}
+	else
+	{
+		if (loadstore == LOAD) 
+		{
+			readmisses++;
+		}
+		misses++;
+
+		// Increment all LRU counters in the cache-set
+		for (j = 0; j < associativity; ++j)
+		{
+			setLRUs[j]++; 
+		}
+
+		if (vacancy >= 0) // fill the nonvalid cache-line
+		{
+			setTags[vacancy] = tag;
+			setLRUs[vacancy] = 0;
+			setValids[vacancy] = 1;
+		}
+		else // boot out the oldest entry
+		{
+			setTags[oldest] = tag;
+			setLRUs[oldest] = 0;
+		}
+
+		return 1;
+	}
 
 //	int hit;
 //	hit = 0;
