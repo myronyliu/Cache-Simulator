@@ -146,7 +146,7 @@ int is_cache_miss(int loadstore, long address, int cycles)
 	int i, j;
 
 	long tag_index_offset = (1 << ADDRESSBITS == 0) ? address : address % (1 << ADDRESSBITS);
-	long index_offset = tag_index_offset % (1 << indexBits + offsetBits);
+	long index_offset = tag_index_offset % (1 << (indexBits + offsetBits));
 
 	unsigned int offset = index_offset % (1 << offsetBits);
 	unsigned int index = index_offset >> offsetBits;
@@ -198,7 +198,7 @@ int is_cache_miss(int loadstore, long address, int cycles)
 				setLRUs[i]++; 
 			}
 		}
-		setLRUs[i] = 0;
+		setLRUs[hit] = 0;
 
 		return 0;
 	}
