@@ -25,14 +25,13 @@ unsigned int indices[BUFFERSIZE];
 unsigned int    tags[BUFFERSIZE][associativity];
 unsigned int offsets[BUFFERSIZE][associativity];
 
-int  valids[BUFFERSIZE][associativity];
+int           valids[BUFFERSIZE][associativity];
 unsigned int    LRUs[BUFFERSIZE][associativity];
 
 int initialized = 0;
 unsigned int tagBits = 0;
 unsigned int indexBits = 0;
 unsigned int offsetBits = 0;
-
 
 long hits=0, misses=0, readhits=0, readmisses=0;
 
@@ -123,9 +122,9 @@ void init()
 
 	for (i = 0; i < CACHESIZE / (BLOCKSIZE * associativity); ++i)
 	{
-		for (j = 0; j < associativity; ++ j)
+		for (j = 0; j < associativity; ++j)
 		{
-			valids[i][j] = 0;
+			valids[i][j] = 0; // set all cache lines to invalid (cold start)
 		}
 	}
 }
@@ -140,16 +139,14 @@ int is_cache_miss(int loadstore, long address, int cycles)
 {
 	if (!initialized)
 	{
-		// partition the 32 bit address into (tag,index,offset)
-		// set all cache lines to "invalid"
 		init();
 		initialized = 1;
 	}
 
 	int i, j;
 
-	unsigned int tag_index_offset = (1 << ADDRESSBITS == 0) ? address : address % (1 << ADDRESSBITS);
-	unsigned int index_offset = tag_index_offset % (1 << indexBits + offsetBits);
+	long tag_index_offset = (1 << ADDRESSBITS == 0) ? address : address % (1 << ADDRESSBITS);
+	long index_offset = tag_index_offset % (1 << indexBits + offsetBits);
 
 	unsigned int offset = index_offset % (1 << offsetBits);
 	unsigned int index = index_offset >> offsetBits;
@@ -159,8 +156,7 @@ int is_cache_miss(int loadstore, long address, int cycles)
 	int *setTags   =   tags[index];
 	int *setLRUs   =   LRUs[index];
 
-	int hit = 0;
-
+	int hit = -1;
 	int vacancy = -1;
 	int oldest = 0;
 	int maxLRU = 0;
@@ -171,7 +167,7 @@ int is_cache_miss(int loadstore, long address, int cycles)
 		{
 			if (setTags[i] == tag)
 			{
-				hit = 1;
+				hit = i;
 				break;
 			}
 			if (setLRUs[i] > maxLRU)
@@ -186,7 +182,7 @@ int is_cache_miss(int loadstore, long address, int cycles)
 		}
 	}
 
-	if (hit)
+	if (hit >= 0)
 	{
 		if (loadstore == LOAD) 
 		{
@@ -195,11 +191,11 @@ int is_cache_miss(int loadstore, long address, int cycles)
 		hits++;
 
 		// Set this line to the most recently used
-		for (j = 0; j < associativity; ++j)
+		for (i = 0; i < associativity; ++i)
 		{
-			if (setLRUs[j] < setLRUs[i])
+			if (setLRUs[i] < setLRUs[hit])
 			{
-				setLRUs[j]++; 
+				setLRUs[i]++; 
 			}
 		}
 		setLRUs[i] = 0;
@@ -215,9 +211,9 @@ int is_cache_miss(int loadstore, long address, int cycles)
 		misses++;
 
 		// Increment all LRU counters in the cache-set
-		for (j = 0; j < associativity; ++j)
+		for (i = 0; i < associativity; ++i)
 		{
-			setLRUs[j]++; 
+			setLRUs[i]++; 
 		}
 
 		if (vacancy >= 0) // fill the nonvalid cache-line
@@ -234,25 +230,5 @@ int is_cache_miss(int loadstore, long address, int cycles)
 
 		return 1;
 	}
-
-//	int hit;
-//	hit = 0;
-//	if (hit)
-//	{
-//		hits++;
-//		if (loadstore == LOAD) 
-//		{
-//			readhits++;
-//		}
-//		return 0;
-//	}
-//	
-//	/* miss */
-//	misses++;
-//	if (loadstore == LOAD) 
-//	{
-//		readmisses++;
-//	}
-//	return 1;
 }
 
