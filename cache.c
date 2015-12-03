@@ -12,23 +12,22 @@
 
 #define CACHESIZE 1024*256
 #define BLOCKSIZE 64
-#define associativity 4
+#define associativity 4 
+#define SETS CACHESIZE / (BLOCKSIZE * associativity)
 
 #define ADDRESSBITS 32
 
 // a good place to declare your storage for tags, etc.  Obviously,
 //   you don't need to actually store the data.
 
-#define BUFFERSIZE 1048576 // We allocate more than we actually need
 
-unsigned int indices[BUFFERSIZE];
-unsigned int    tags[BUFFERSIZE][associativity];
-unsigned int offsets[BUFFERSIZE][associativity];
+unsigned int indices[SETS];
+unsigned int    tags[SETS][associativity];
+unsigned int offsets[SETS][associativity];
 
-int           valids[BUFFERSIZE][associativity];
-unsigned int    LRUs[BUFFERSIZE][associativity];
+int           valids[SETS][associativity];
+unsigned int    LRUs[SETS][associativity];
 
-int initialized = 0;
 unsigned int tagBits = 0;
 unsigned int indexBits = 0;
 unsigned int offsetBits = 0;
@@ -45,9 +44,37 @@ main()
 	
 	int i,j;
 	
-	
 	//a good place to initialize your structures.
 	
+	int distinctOffsets = 1;
+	while (distinctOffsets < BLOCKSIZE)
+	{
+		distinctOffsets *= 2;
+		offsetBits++;
+	}
+
+	int distinctIndices = 1;
+	while (distinctIndices < CACHESIZE / (BLOCKSIZE * associativity))
+	{
+		distinctIndices *= 2;
+		indexBits++;
+	}
+
+	tagBits = ADDRESSBITS - indexBits - offsetBits;
+
+	printf("%d bit address had been partitioned into:\n", ADDRESSBITS);
+	printf("  %d\t tag         bits\n", tagBits);
+	printf("  %d\t index       bits\n", indexBits);
+	printf("  %d\t byte-offset bits\n", offsetBits);
+
+	for (i = 0; i < CACHESIZE / (BLOCKSIZE * associativity); ++i)
+	{
+		for (j = 0; j < associativity; ++j)
+		{
+			valids[i][j] = 0; // set all cache lines to invalid (cold start)
+		}
+	}
+
 	printf("Cache parameters:\n");
 	printf("\tCache size %d\n", CACHESIZE);
 	printf("\tCache block size %d\n", BLOCKSIZE);
@@ -95,41 +122,6 @@ main()
 	printf("store_hits %ld\n", hits - readhits);
 }
 
-void init()
-{
-	int i, j;
-
-	int distinctOffsets = 1;
-	while (distinctOffsets < BLOCKSIZE)
-	{
-		distinctOffsets *= 2;
-		offsetBits++;
-	}
-
-	int distinctIndices = 1;
-	while (distinctIndices < CACHESIZE / (BLOCKSIZE * associativity))
-	{
-		distinctIndices *= 2;
-		indexBits++;
-	}
-
-	tagBits = ADDRESSBITS - indexBits - offsetBits;
-
-	printf("%d bit address had been partitioned into:\n", ADDRESSBITS);
-	printf("  %d\t tag         bits\n", tagBits);
-	printf("  %d\t index       bits\n", indexBits);
-	printf("  %d\t byte-offset bits\n", offsetBits);
-
-	for (i = 0; i < CACHESIZE / (BLOCKSIZE * associativity); ++i)
-	{
-		for (j = 0; j < associativity; ++j)
-		{
-			valids[i][j] = 0; // set all cache lines to invalid (cold start)
-		}
-	}
-}
-
-
 // you will complete this function.  Notice that we pass the 
 //    cycle count to this routine as an argument.  That may make
 //    it easier to implement lru.
@@ -137,12 +129,6 @@ void init()
 
 int is_cache_miss(int loadstore, long address, int cycles)
 {
-	if (!initialized)
-	{
-		init();
-		initialized = 1;
-	}
-
 	int i, j;
 
 	long tag_index_offset = (1 << ADDRESSBITS == 0) ? address : address % (1 << ADDRESSBITS);
@@ -231,4 +217,3 @@ int is_cache_miss(int loadstore, long address, int cycles)
 		return 1;
 	}
 }
-
